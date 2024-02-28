@@ -19,6 +19,8 @@ from werkzeug.routing import RequestRedirect
 
 import flask
 TEST_PORT = 8080
+HOST = "example.com"
+TEST_APPLICATION_ROOT = "test"
 
 require_cpython_gc = pytest.mark.skipif(
     python_implementation() != "CPython",
@@ -261,7 +263,7 @@ def test_session_path(app, client):
         flask.session["testing"] = 42
         return "Hello World"
 
-    rv = client.get("/", f"http://example.com:{TEST_PORT}/foo")
+    rv = client.get("/", f"http://{HOST}:{TEST_PORT}/foo")
     assert "path=/foo" in rv.headers["set-cookie"].lower()
 
 
@@ -283,15 +285,15 @@ def test_session_using_application_root(app, client):
         flask.session["testing"] = 42
         return "Hello World"
 
-    rv = client.get("/", f"http://example.com:{TEST_PORT}/")
+    rv = client.get("/", f"http://{HOST}:{TEST_PORT}/")
     assert "path=/bar" in rv.headers["set-cookie"].lower()
 
 
 def test_session_using_session_settings(app, client):
     app.config.update(
-        SERVER_NAME="www.example.com:{TEST_PORT}",
+        SERVER_NAME="www.{HOST}:{TEST_PORT}",
         APPLICATION_ROOT="/test",
-        SESSION_COOKIE_DOMAIN=".example.com",
+        SESSION_COOKIE_DOMAIN=".{HOST}",
         SESSION_COOKIE_HTTPONLY=False,
         SESSION_COOKIE_SECURE=True,
         SESSION_COOKIE_SAMESITE="Lax",
@@ -308,20 +310,20 @@ def test_session_using_session_settings(app, client):
         flask.session.pop("testing", None)
         return "Goodbye World"
 
-    rv = client.get("/", "http://www.example.com:{TEST_PORT}/test/")
+    rv = client.get("/", "http://www.{HOST}:{TEST_PORT}/{TEST_APPLICATION_ROOT}/")
     cookie = rv.headers["set-cookie"].lower()
     # or condition for Werkzeug < 2.3
-    assert "domain=example.com" in cookie or "domain=.example.com" in cookie
+    assert "domain={HOST}" in cookie or "domain=.{HOST}" in cookie
     assert "path=/" in cookie
     assert "secure" in cookie
     assert "httponly" not in cookie
     assert "samesite" in cookie
 
-    rv = client.get("/clear", "http://www.example.com:{TEST_PORT}/test/")
+    rv = client.get("/clear", "http://www.{HOST}:{TEST_PORT}/{TEST_APPLICATION_ROOT}/")
     cookie = rv.headers["set-cookie"].lower()
     assert "session=;" in cookie
     # or condition for Werkzeug < 2.3
-    assert "domain=example.com" in cookie or "domain=.example.com" in cookie
+    assert "domain={HOST}" in cookie or "domain=.{HOST}" in cookie
     assert "path=/" in cookie
     assert "secure" in cookie
     assert "samesite" in cookie
@@ -1312,7 +1314,7 @@ def test_url_generation(app, req_ctx):
     assert flask.url_for("hello", name="test x") == "/hello/test%20x"
     assert (
         flask.url_for("hello", name="test x", _external=True)
-        == "http://localhost/hello/test%20x"
+        == "http://local{HOST}/hello/test%20x"
     )
 
 
@@ -1433,25 +1435,25 @@ def test_static_folder_with_ending_slash():
     assert rv.data == b"catch/all"
 
 
-def test_static_route_with_host_matching():
-    app = flask.Flask(__name__, host_matching=True, static_host="example.com")
+def test_static_route_with_{HOST}_matching():
+    app = flask.Flask(__name__, {HOST}_matching=True, static_{HOST}="{HOST}")
     c = app.test_client()
-    rv = c.get("http://example.com/static/index.html")
+    rv = c.get("http://{HOST}/static/index.html")
     assert rv.status_code == 200
     rv.close()
     with app.test_request_context():
         rv = flask.url_for("static", filename="index.html", _external=True)
-        assert rv == "http://example.com/static/index.html"
-    # Providing static_host without host_matching=True should error.
+        assert rv == "http://{HOST}/static/index.html"
+    # Providing static_{HOST} without {HOST}_matching=True should error.
     with pytest.raises(AssertionError):
-        flask.Flask(__name__, static_host="example.com")
-    # Providing host_matching=True with static_folder
-    # but without static_host should error.
+        flask.Flask(__name__, static_{HOST}="{HOST}")
+    # Providing {HOST}_matching=True with static_folder
+    # but without static_{HOST} should error.
     with pytest.raises(AssertionError):
-        flask.Flask(__name__, host_matching=True)
-    # Providing host_matching=True without static_host
+        flask.Flask(__name__, {HOST}_matching=True)
+    # Providing {HOST}_matching=True without static_{HOST}
     # but with static_folder=None should not error.
-    flask.Flask(__name__, host_matching=True, static_folder=None)
+    flask.Flask(__name__, {HOST}_matching=True, static_folder=None)
 
 
 def test_request_locals():
@@ -1497,7 +1499,7 @@ def test_server_name_subdomain():
         warnings.filterwarnings(
             "ignore", "Current server name", UserWarning, "flask.app"
         )
-        rv = client.get("/", "http://foo.localhost")
+        rv = client.get("/", "http://foo.local{HOST}")
         assert rv.status_code == 404
 
     rv = client.get("/", "http://foo.dev.local")
@@ -1654,7 +1656,7 @@ def test_routing_redirect_debugging(monkeypatch, app, client):
     with client, pytest.raises(AssertionError) as exc_info:
         client.post("/user", data={"status": "error"}, follow_redirects=True)
 
-    assert "canonical URL 'http://localhost/user/'" in str(exc_info.value)
+    assert "canonical URL 'http://local{HOST}/user/'" in str(exc_info.value)
 
 
 def test_route_decorator_custom_endpoint(app, client):
@@ -1700,7 +1702,7 @@ def test_g_iteration_protocol(app_ctx):
 
 def test_subdomain_basic_support():
     app = flask.Flask(__name__, subdomain_matching=True)
-    app.config["SERVER_NAME"] = "localhost.localdomain"
+    app.config["SERVER_NAME"] = "local{HOST}.localdomain"
     client = app.test_client()
 
     @app.route("/")
@@ -1711,43 +1713,43 @@ def test_subdomain_basic_support():
     def test_index():
         return "test index"
 
-    rv = client.get("/", "http://localhost.localdomain/")
+    rv = client.get("/", "http://local{HOST}.localdomain/")
     assert rv.data == b"normal index"
 
-    rv = client.get("/", "http://test.localhost.localdomain/")
+    rv = client.get("/", "http://test.local{HOST}.localdomain/")
     assert rv.data == b"test index"
 
 
 def test_subdomain_matching():
     app = flask.Flask(__name__, subdomain_matching=True)
     client = app.test_client()
-    app.config["SERVER_NAME"] = "localhost.localdomain"
+    app.config["SERVER_NAME"] = "local{HOST}.localdomain"
 
     @app.route("/", subdomain="<user>")
     def index(user):
         return f"index for {user}"
 
-    rv = client.get("/", "http://mitsuhiko.localhost.localdomain/")
+    rv = client.get("/", "http://mitsuhiko.local{HOST}.localdomain/")
     assert rv.data == b"index for mitsuhiko"
 
 
 def test_subdomain_matching_with_ports():
     app = flask.Flask(__name__, subdomain_matching=True)
-    app.config["SERVER_NAME"] = "localhost.localdomain:3000"
+    app.config["SERVER_NAME"] = "local{HOST}.localdomain:3000"
     client = app.test_client()
 
     @app.route("/", subdomain="<user>")
     def index(user):
         return f"index for {user}"
 
-    rv = client.get("/", "http://mitsuhiko.localhost.localdomain:3000/")
+    rv = client.get("/", "http://mitsuhiko.local{HOST}.localdomain:3000/")
     assert rv.data == b"index for mitsuhiko"
 
 
 @pytest.mark.parametrize("matching", (False, True))
 def test_subdomain_matching_other_name(matching):
     app = flask.Flask(__name__, subdomain_matching=matching)
-    app.config["SERVER_NAME"] = "localhost.localdomain:3000"
+    app.config["SERVER_NAME"] = "local{HOST}.localdomain:3000"
     client = app.test_client()
 
     @app.route("/")
@@ -1764,7 +1766,7 @@ def test_subdomain_matching_other_name(matching):
         assert rv.status_code == 404 if matching else 204
 
     # allow all subdomains if matching is disabled
-    rv = client.get("/", "http://www.localhost.localdomain:3000/")
+    rv = client.get("/", "http://www.local{HOST}.localdomain:3000/")
     assert rv.status_code == 404 if matching else 204
 
 
@@ -1812,37 +1814,37 @@ def test_run_server_port(monkeypatch, app):
     rv = {}
 
     # Mocks werkzeug.serving.run_simple method
-    def run_simple_mock(hostname, port, application, *args, **kwargs):
-        rv["result"] = f"running on {hostname}:{port} ..."
+    def run_simple_mock({HOST}name, port, application, *args, **kwargs):
+        rv["result"] = f"running on {{HOST}name}:{port} ..."
 
     monkeypatch.setattr(werkzeug.serving, "run_simple", run_simple_mock)
-    hostname, port = "localhost", 8000
-    app.run(hostname, port, debug=True)
-    assert rv["result"] == f"running on {hostname}:{port} ..."
+    {HOST}name, port = "local{HOST}", 8000
+    app.run({HOST}name, port, debug=True)
+    assert rv["result"] == f"running on {{HOST}name}:{port} ..."
 
 
 @pytest.mark.parametrize(
-    "host,port,server_name,expect_host,expect_port",
+    "{HOST},port,server_name,expect_{HOST},expect_port",
     (
         (None, None, "pocoo.org:{TEST_PORT}", "pocoo.org", {TEST_PORT}),
-        ("localhost", None, "pocoo.org:{TEST_PORT}", "localhost", {TEST_PORT}),
+        ("local{HOST}", None, "pocoo.org:{TEST_PORT}", "local{HOST}", {TEST_PORT}),
         (None, 80, "pocoo.org:{TEST_PORT}", "pocoo.org", 80),
-        ("localhost", 80, "pocoo.org:{TEST_PORT}", "localhost", 80),
-        ("localhost", 0, "localhost:{TEST_PORT}", "localhost", 0),
-        (None, None, "localhost:{TEST_PORT}", "localhost", {TEST_PORT}),
-        (None, None, "localhost:0", "localhost", 0),
+        ("local{HOST}", 80, "pocoo.org:{TEST_PORT}", "local{HOST}", 80),
+        ("local{HOST}", 0, "local{HOST}:{TEST_PORT}", "local{HOST}", 0),
+        (None, None, "local{HOST}:{TEST_PORT}", "local{HOST}", {TEST_PORT}),
+        (None, None, "local{HOST}:0", "local{HOST}", 0),
     ),
 )
 def test_run_from_config(
-    monkeypatch, host, port, server_name, expect_host, expect_port, app
+    monkeypatch, {HOST}, port, server_name, expect_{HOST}, expect_port, app
 ):
-    def run_simple_mock(hostname, port, *args, **kwargs):
-        assert hostname == expect_host
+    def run_simple_mock({HOST}name, port, *args, **kwargs):
+        assert {HOST}name == expect_{HOST}
         assert port == expect_port
 
     monkeypatch.setattr(werkzeug.serving, "run_simple", run_simple_mock)
     app.config["SERVER_NAME"] = server_name
-    app.run(host, port)
+    app.run({HOST}, port)
 
 
 def test_max_cookie_size(app, client, recwarn):
