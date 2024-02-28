@@ -1,9 +1,6 @@
 import os
-
 import pytest
-
 import flask
-
 from config_module_app import app as config_module_app
 from config_package_app import app as config_package_app
 from namespace.package2 import app as namespace_package2_app
